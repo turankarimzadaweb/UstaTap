@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UstaTap: sifarişlər</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav"></nav>
+<div class="tape" aria-hidden="true"></div>
+
+<main class="container">
+    <h1 class="page-title" id="title">Sifarişlərim</h1>
+    <p class="hint" id="subtitle"></p>
+    <div id="orders" style="margin-top: 20px;"></div>
+</main>
+
+<!-- Rəy pəncərəsi -->
+<div class="modal-bg" id="reviewModal">
+    <div class="modal">
+        <h3 id="reviewTitle">Rəy yaz</h3>
+        <div class="star-picker" id="starPicker" style="margin-bottom: 12px;"></div>
+        <textarea id="reviewComment" placeholder="İş necə keçdi? Digər müştərilərə kömək edəcək qısa rəy yaz"></textarea>
+        <div id="reviewMsg" class="msg"></div>
+        <div class="modal-actions">
+            <button onclick="submitReview()">Rəyi göndər</button>
+            <button class="ghost" onclick="closeModal()">Bağla</button>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+    const user = getUser();
+    let currentOrders = [];
+    let reviewOrderId = null;
+    let selectedStars = 0;
+
+    function fmtDate(d) {
+        if (typeof d === 'string' && d.includes('-')) {
+            const [y, m, day] = d.split('-');
+            return day + '.' + m + '.' + y;
+        }
+        return '';
+    }
+
+    // Müştərinin hansı sifarişlərə artıq rəy yazdığını öyrənir
+    async function loadReviewedSet(orders) {
+        const masterIds = [...new Set(orders.filter(o => o.status === 'COMPLETED').map(o => o.master.id))];
+        const reviewed = new Set();
+        for (const id of masterIds) {
+            const reviews = await api('/api/reviews/master/' + id);
+            reviews.forEach(r => reviewed.add(r.order.id));
+        }
+        return reviewed;
+    }
+
+    function orderHtml(o, reviewed) {
+        let who;
+        if (user.role === 'MASTER') {
+            const phone = (o.customer.phone || '').replace(/\s/g, '');
+            who = `<h2>${esc(o.customer.fullName)}</h2>
+                       <div class="meta">${esc(o.customer.address)}</div>
+                       <a class="tel" href="tel:${esc(phone)}">${esc(o.customer.phone)}</a>`;
+        } else {
+            who = `<h2>${esc(o.master.fullName)}</h2>
+                       <div class="meta"><span class="trade">${esc(o.master.profession)}</span>${esc(o.master.district)} rayonu</div>`;
+        }
+
+        let actions = '';
+        if (user.role === 'MASTER') {
+            if (o.status === 'PENDING') {
+                actions = `<button onclick="changeStatus(${o.id}, 'ACCEPTED')">Qəbul et</button>`;
+            } else if (o.status === 'ACCEPTED') {
+                actions = `<button class="green" onclick="changeStatus(${o.id}, 'COMPLETED')">İşi tamamla</button>`;
+            }
+        } else {
+            if (o.status === 'PENDING') {
+                actions = '<span class="hint">Ustanın cavabı gözlənilir.</span>';
+            } else if (o.status === 'ACCEPTED') {
+                actions = '<span class="hint">Usta işi tamamlayanda rəy yaza biləcəksən.</span>';
+            } else if (reviewed.has(o.id)) {
+                actions = '<span class="hint">Bu sifariş üçün rəy yazılıb.</span>';
+            } else {
+                actions = `<button onclick="openReview(${o.id})">Rəy yaz</button>`;
+            }
+        }
+
+        return `
+                <article class="order-card">
+                    <div class="order-head">
+                        <div class="who">${who}</div>
+                        <span class="status status-${esc(o.status)}">${statusText[o.status] || esc(o.status)}</span>
+                    </div>
+                    <p>${esc(o.description)}</p>
+                    <div class="meta">Sifariş №${o.id}, ${fmtDate(o.createdDate)}</div>
+                    ${actions ? '<div class="actions">' + actions + '</div>' : ''}
+                </article>`;
+    }
+
+    async function loadOrders() {
+        const box = document.getElementById('orders');
+        try {
+            const url = user.role === 'MASTER'
+                ? '/api/orders/master/' + user.id
+                : '/api/orders/customer/' + user.id;
+            const orders = await api(url);
+            orders.sort((a, b) => b.id - a.id);
+            currentOrders = orders;
+
+            const reviewed = user.role === 'CUSTOMER' ? await loadReviewedSet(orders) : new Set();
+
+            if (orders.length === 0) {
+                box.innerHTML = user.role === 'MASTER'
+                    ? '<p class="empty">Hələ sənə sifariş gəlməyib. Müştərilər sifariş verəndə burada görünəcək.</p>'
+                    : '<p class="empty">Hələ sifariş verməmisən. <a href="index.html">Ustalara bax</a> və ilk sifarişini göndər.</p>';
+                return;
+            }
+            box.innerHTML = orders.map(o => orderHtml(o, reviewed)).join('');
+        } catch (e) {
+            box.innerHTML = '<p class="empty">' + esc(e.message) + '</p>';
+        }
+    }
+
+    async function changeStatus(orderId, status) {
+        try {
+            await api('/api/orders/' + orderId + '/status?status=' + status, 'PUT');
+            await loadOrders();
+        } catch (e) {
+            alert(e.message);
+        }
+    }
+
+    // ---- Rəy yazmaq ----
+    function renderStars() {
+        document.getElementById('starPicker').innerHTML = [1, 2, 3, 4, 5].map(i =>
+            `<span class="${i <= selectedStars ? 'on' : ''}" tabindex="0" role="button" aria-label="${i} ulduz"
+                       onclick="setStars(${i})"
+                       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setStars(${i}); }">★</span>`
+        ).join('');
+    }
+
+    function setStars(n) {
+        selectedStars = n;
+        renderStars();
+    }
+
+    function openReview(orderId) {
+        const order = currentOrders.find(o => o.id === orderId);
+        reviewOrderId = orderId;
+        selectedStars = 0;
+        document.getElementById('reviewTitle').textContent = order.master.fullName + ' üçün rəy yaz';
+        document.getElementById('reviewComment').value = '';
+        document.getElementById('reviewMsg').className = 'msg';
+        renderStars();
+        document.getElementById('reviewModal').classList.add('open');
+    }
+
+    function closeModal() {
+        document.getElementById('reviewModal').classList.remove('open');
+    }
+
+    async function submitReview() {
+        const msg = document.getElementById('reviewMsg');
+        const comment = document.getElementById('reviewComment').value.trim();
+
+        if (selectedStars === 0) {
+            msg.textContent = 'Ulduz seç';
+            msg.className = 'msg error';
+            return;
+        }
+
+        try {
+            await api('/api/reviews', 'POST', {
+                orderId: reviewOrderId,
+                stars: selectedStars,
+                comment: comment
+            });
+            msg.textContent = 'Rəy göndərildi. Təşəkkür edirik!';
+            msg.className = 'msg success';
+            await loadOrders();
+            setTimeout(closeModal, 1200);
+        } catch (e) {
+            msg.textContent = e.message;
+            msg.className = 'msg error';
+        }
+    }
+
+    // ---- Başlanğıc ----
+    if (!user) {
+        window.location.href = 'auth.html';
+    } else {
+        if (user.role === 'MASTER') {
+            document.getElementById('title').textContent = 'Gələn sifarişlər';
+            document.getElementById('subtitle').textContent = 'Sifarişi qəbul et, iş bitəndə tamamla. Müştəri bundan sonra rəy yaza bilər.';
+        } else {
+            document.getElementById('subtitle').textContent = 'İş tamamlananda ustaya ulduz verə bilərsən.';
+        }
+        loadOrders();
+    }
+</script>
+</body>
+</html>

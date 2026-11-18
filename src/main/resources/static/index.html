@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UstaTap: etibarlı usta tap</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav"></nav>
+
+<header class="hero">
+    <h1>Kran sızır, işıq getdi. Kimi çağırım?</h1>
+    <p>Ustalar müştərilərin ulduzuna görə sıralanır. Rəyi yalnız işi tamamlanmış müştəri yaza bilər.</p>
+    <div class="finder">
+        <input id="profSearch" placeholder="Peşə: santexnik, elektrik..." aria-label="Peşə">
+        <input id="districtSearch" placeholder="Rayon: Nəsimi, Yasamal..." aria-label="Rayon">
+    </div>
+    <div class="chips" id="chips"></div>
+</header>
+<div class="tape" aria-hidden="true"></div>
+
+<main class="catalog">
+    <div class="toolbar">
+        <div id="count" class="count"></div>
+        <label class="sort">Sıralama
+            <select id="sortBy">
+                <option value="rating">Reytinqə görə</option>
+                <option value="price">Qiymətə görə (ucuzdan bahaya)</option>
+            </select>
+        </label>
+    </div>
+    <div id="masters" class="list intro"></div>
+</main>
+
+<!-- Sifariş pəncərəsi -->
+<div class="modal-bg" id="orderModal">
+    <div class="modal">
+        <h3 id="orderTitle">Sifariş ver</h3>
+        <textarea id="orderDesc" placeholder="Nə iş görülməlidir? Məsələn: mətbəxdəki kran sızır"></textarea>
+        <div id="orderMsg" class="msg"></div>
+        <div class="modal-actions">
+            <button onclick="submitOrder()">Sifarişi göndər</button>
+            <button class="ghost" onclick="closeModal('orderModal')">Bağla</button>
+        </div>
+    </div>
+</div>
+
+<!-- Rəylər pəncərəsi -->
+<div class="modal-bg" id="reviewsModal">
+    <div class="modal">
+        <h3 id="reviewsTitle">Rəylər</h3>
+        <div id="reviewsList" class="reviews-list"></div>
+        <div class="modal-actions">
+            <button class="ghost" onclick="closeModal('reviewsModal')">Bağla</button>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+    let allMasters = [];
+    let selectedMaster = null;
+    let activeChip = '';
+
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('open');
+    }
+
+    function currentList() {
+        const prof = document.getElementById('profSearch').value.toLowerCase();
+        const dist = document.getElementById('districtSearch').value.toLowerCase();
+        const sortBy = document.getElementById('sortBy').value;
+
+        const list = allMasters.filter(m =>
+            (m.profession || '').toLowerCase().includes(prof) &&
+            (m.district || '').toLowerCase().includes(dist));
+
+        if (sortBy === 'price') {
+            list.sort((a, b) => (a.price || 0) - (b.price || 0));
+        } else {
+            list.sort((a, b) => b.averageRating - a.averageRating || b.reviewCount - a.reviewCount);
+        }
+        return list;
+    }
+
+    function rowHtml(m) {
+        const hasReviews = m.reviewCount > 0;
+        const phoneLink = (m.phone || '').replace(/\s/g, '');
+        return `
+                <article class="row">
+                    <div class="tile" aria-hidden="true">${esc(m.fullName.charAt(0))}</div>
+                    <div class="who">
+                        <h2>${esc(m.fullName)}</h2>
+                        <div class="meta"><span class="trade">${esc(m.profession)}</span>${esc(m.district)} rayonu</div>
+                        <p>${esc(m.description)}</p>
+                        <a class="tel" href="tel:${esc(phoneLink)}">${esc(m.phone)}</a>
+                    </div>
+                    <div class="score">
+                        <div class="num">${hasReviews ? m.averageRating.toFixed(1) : '–'}</div>
+                        ${tapeBar(m.averageRating)}
+                        <div class="small">${hasReviews ? m.reviewCount + ' rəy' : 'Hələ rəy yoxdur'}</div>
+                    </div>
+                    <div class="deal">
+                        <div class="price">${esc(m.price)} <small>AZN</small></div>
+                        <button class="ghost" onclick="showReviews(${m.id})">Rəylərə bax</button>
+                        <button onclick="openOrder(${m.id})">Sifariş ver</button>
+                    </div>
+                </article>`;
+    }
+
+    function render() {
+        const box = document.getElementById('masters');
+        const list = currentList();
+        document.getElementById('count').textContent = list.length + ' usta tapıldı';
+
+        if (list.length === 0) {
+            box.innerHTML = '<p class="empty">Bu axtarışa uyğun usta yoxdur. Peşə və ya rayon sözünü qısaldıb yenidən yoxla.</p>';
+            return;
+        }
+        box.innerHTML = list.map(rowHtml).join('');
+    }
+
+    function renderChips() {
+        const trades = [...new Set(allMasters.map(m => m.profession))];
+        document.getElementById('chips').innerHTML = trades.map(t =>
+            `<button type="button" class="chip${t === activeChip ? ' on' : ''}" data-trade="${esc(t)}">${esc(t)}</button>`
+        ).join('');
+    }
+
+    function pickChip(trade) {
+        activeChip = (activeChip === trade) ? '' : trade;
+        document.getElementById('profSearch').value = activeChip;
+        renderChips();
+        render();
+    }
+
+    function openOrder(masterId) {
+        const user = getUser();
+        if (!user) {
+            window.location.href = 'auth.html';
+            return;
+        }
+        if (user.role !== 'CUSTOMER') {
+            alert('Sifariş yalnız müştəri hesabı ilə verilə bilər');
+            return;
+        }
+        selectedMaster = allMasters.find(m => m.id === masterId);
+        document.getElementById('orderTitle').textContent = 'Sifariş: ' + selectedMaster.fullName;
+        document.getElementById('orderDesc').value = '';
+        document.getElementById('orderMsg').className = 'msg';
+        document.getElementById('orderModal').classList.add('open');
+    }
+
+    async function submitOrder() {
+        const user = getUser();
+        const desc = document.getElementById('orderDesc').value.trim();
+        const msg = document.getElementById('orderMsg');
+
+        if (!desc) {
+            msg.textContent = 'İşin təsvirini yaz';
+            msg.className = 'msg error';
+            return;
+        }
+
+        try {
+            await api('/api/orders', 'POST', {
+                customerId: user.id,
+                masterId: selectedMaster.id,
+                description: desc
+            });
+            msg.textContent = 'Sifariş göndərildi. Ustanın cavabını "Sifarişlərim" bölməsində görəcəksən.';
+            msg.className = 'msg success';
+        } catch (e) {
+            msg.textContent = e.message;
+            msg.className = 'msg error';
+        }
+    }
+
+    async function showReviews(masterId) {
+        const master = allMasters.find(m => m.id === masterId);
+        document.getElementById('reviewsTitle').textContent = master.fullName + ': rəylər';
+        const list = document.getElementById('reviewsList');
+        list.innerHTML = 'Yüklənir...';
+        document.getElementById('reviewsModal').classList.add('open');
+
+        try {
+            const reviews = await api('/api/reviews/master/' + masterId);
+            if (reviews.length === 0) {
+                list.innerHTML = '<p>Bu ustaya hələ rəy yazılmayıb.</p>';
+                return;
+            }
+            list.innerHTML = reviews.map(r => `
+                    <div class="review">
+                        <div class="stars">${starsHtml(r.stars)}</div>
+                        <div>${esc(r.comment)}</div>
+                        <div class="by">${esc(r.order.customer.fullName)}</div>
+                    </div>`).join('');
+        } catch (e) {
+            list.innerHTML = '<p>' + esc(e.message) + '</p>';
+        }
+    }
+
+    document.getElementById('chips').addEventListener('click', e => {
+        const button = e.target.closest('.chip');
+        if (button) pickChip(button.dataset.trade);
+    });
+    document.getElementById('profSearch').addEventListener('input', () => {
+        activeChip = '';
+        renderChips();
+        render();
+    });
+    document.getElementById('districtSearch').addEventListener('input', render);
+    document.getElementById('sortBy').addEventListener('change', render);
+
+    api('/api/masters')
+        .then(masters => {
+            allMasters = masters;
+            renderChips();
+            render();
+            setTimeout(() => document.getElementById('masters').classList.remove('intro'), 1600);
+        })
+        .catch(() => {
+            document.getElementById('masters').innerHTML =
+                '<p class="empty">Ustalar yüklənmədi. Serverin işlədiyini yoxla və səhifəni yenilə.</p>';
+        });
+</script>
+</body>
+</html>

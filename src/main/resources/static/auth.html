@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UstaTap: giriş və qeydiyyat</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav"></nav>
+
+<div class="auth">
+    <section class="auth-side">
+        <div class="auth-copy">
+            <h1>Hesab aç, sifariş ver, işi qiymətləndir.</h1>
+            <ol class="steps">
+                <li><b>1</b><span>Müştəri işi təsvir edib ustaya sifariş göndərir.</span></li>
+                <li><b>2</b><span>Usta sifarişi qəbul edir və işi görür.</span></li>
+                <li><b>3</b><span>İş bitəndə müştəri ulduz verir və rəy yazır.</span></li>
+            </ol>
+            <p class="auth-note">Saxta rəy yoxdur: ulduzu yalnız işi tamamlanmış müştəri verə bilər.</p>
+        </div>
+        <div class="tape" aria-hidden="true"></div>
+    </section>
+
+    <section class="auth-main">
+        <div class="form-box">
+            <div class="tabs">
+                <button id="tabLogin" class="active" onclick="showTab('login')">Giriş</button>
+                <button id="tabRegister" onclick="showTab('register')">Qeydiyyat</button>
+            </div>
+
+            <!-- Giriş forması -->
+            <div id="loginForm">
+                <h2>Hesabına daxil ol</h2>
+                <label class="field">Email
+                    <input id="loginEmail" type="email" placeholder="email@mail.com">
+                </label>
+                <label class="field">Parol
+                    <input id="loginPassword" type="password" placeholder="Parolun">
+                </label>
+                <button class="submit" onclick="login()">Daxil ol</button>
+                <p class="hint">Test hesabları: musteri@mail.com (müştəri), elvin@mail.com (usta). Parol: 1234</p>
+            </div>
+
+            <!-- Qeydiyyat forması -->
+            <div id="registerForm" style="display: none;">
+                <h2>Yeni hesab yarat</h2>
+
+                <div class="field">Mən kiməm?
+                    <div class="role-pick">
+                        <label class="role-tile">
+                            <input type="radio" name="role" value="CUSTOMER" checked>
+                            <span><b>Müştəri</b>Usta axtarıram</span>
+                        </label>
+                        <label class="role-tile">
+                            <input type="radio" name="role" value="MASTER">
+                            <span><b>Usta</b>İş axtarıram</span>
+                        </label>
+                    </div>
+                </div>
+
+                <label class="field">Ad və soyad
+                    <input id="fullName" placeholder="Ad Soyad">
+                </label>
+                <label class="field">Email
+                    <input id="email" type="email" placeholder="email@mail.com">
+                </label>
+                <label class="field">Parol
+                    <input id="password" type="password" placeholder="Parol seç">
+                </label>
+                <label class="field">Telefon
+                    <input id="phone" placeholder="050 000 00 00">
+                </label>
+
+                <div id="customerFields">
+                    <label class="field">Ünvan
+                        <input id="address" placeholder="Məsələn: Bakı, Nəsimi">
+                    </label>
+                </div>
+
+                <div id="masterFields" style="display: none;">
+                    <label class="field">Peşə
+                        <input id="profession" placeholder="Məsələn: Santexnik">
+                    </label>
+                    <label class="field">Rayon
+                        <input id="district" placeholder="Məsələn: Nəsimi">
+                    </label>
+                    <label class="field">Qiymət (AZN)
+                        <input id="price" type="number" placeholder="30">
+                    </label>
+                    <label class="field">Özün haqqında
+                        <textarea id="description" rows="3" placeholder="Təcrübən və gördüyün işlər"></textarea>
+                    </label>
+                </div>
+
+                <button class="submit" onclick="register()">Hesab yarat</button>
+            </div>
+
+            <div id="msg" class="msg"></div>
+        </div>
+    </section>
+</div>
+
+<script src="app.js"></script>
+<script>
+    function showMsg(text, type) {
+        const box = document.getElementById('msg');
+        box.textContent = text;
+        box.className = 'msg ' + type;
+    }
+
+    function showTab(tab) {
+        const isLogin = tab === 'login';
+        document.getElementById('loginForm').style.display = isLogin ? 'block' : 'none';
+        document.getElementById('registerForm').style.display = isLogin ? 'none' : 'block';
+        document.getElementById('tabLogin').className = isLogin ? 'active' : '';
+        document.getElementById('tabRegister').className = isLogin ? '' : 'active';
+        document.getElementById('msg').className = 'msg';
+    }
+
+    function getRole() {
+        return document.querySelector('input[name="role"]:checked').value;
+    }
+
+    function toggleRole() {
+        const isMaster = getRole() === 'MASTER';
+        document.getElementById('masterFields').style.display = isMaster ? 'block' : 'none';
+        document.getElementById('customerFields').style.display = isMaster ? 'none' : 'block';
+    }
+
+    async function login() {
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
+
+        if (!email || !password) {
+            showMsg('Email və parolu yaz', 'error');
+            return;
+        }
+
+        try {
+            const user = await api('/api/auth/login', 'POST', { email: email, password: password });
+            saveUser(user);
+            window.location.href = 'index.html';
+        } catch (e) {
+            showMsg(e.message, 'error');
+        }
+    }
+
+    async function register() {
+        const role = getRole();
+        const body = {
+            role: role,
+            fullName: document.getElementById('fullName').value.trim(),
+            email: document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value,
+            phone: document.getElementById('phone').value.trim(),
+            address: document.getElementById('address').value.trim(),
+            profession: document.getElementById('profession').value.trim(),
+            district: document.getElementById('district').value.trim(),
+            price: parseFloat(document.getElementById('price').value) || null,
+            description: document.getElementById('description').value.trim()
+        };
+
+        if (!body.fullName || !body.email || !body.password) {
+            showMsg('Ad, email və parolu doldur', 'error');
+            return;
+        }
+        if (role === 'MASTER' && (!body.profession || !body.district || !body.price)) {
+            showMsg('Usta üçün peşə, rayon və qiyməti doldur', 'error');
+            return;
+        }
+
+        try {
+            const user = await api('/api/auth/register', 'POST', body);
+            saveUser(user);
+            window.location.href = 'index.html';
+        } catch (e) {
+            showMsg(e.message, 'error');
+        }
+    }
+
+    document.querySelectorAll('input[name="role"]').forEach(r => r.addEventListener('change', toggleRole));
+
+    // Enter düyməsi ilə göndərmək
+    ['loginForm', 'registerForm'].forEach(id => {
+        document.getElementById(id).addEventListener('keydown', e => {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+                id === 'loginForm' ? login() : register();
+            }
+        });
+    });
+</script>
+</body>
+</html>
