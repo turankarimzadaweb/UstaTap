@@ -1107,3 +1107,21 @@ input:-webkit-autofill {
     box-shadow: 0 0 0 1000px #2b2e36 inset;
     caret-color: var(--text);
 }
+
+.role-tile:first-child input:checked + span {
+    border-color: var(--blue);
+    background: rgba(15, 91, 255, 0.16);
+    box-shadow: 0 0 0 4px rgba(15, 91, 255, 0.15);
+}
+
+.role-tile:last-child input:checked + span {
+    box-shadow: 0 0 0 4px rgba(255, 128, 0, 0.15);
+}
+
+.role-tile:first-child:hover span {
+    border-color: rgba(15, 91, 255, 0.6);
+}
+
+.role-tile:last-child:hover span {
+    border-color: rgba(255, 128, 0, 0.6);
+}
